@@ -36,6 +36,17 @@ export function listRemoteHeads(): RemoteHead[] {
       baseUrl: process.env.STB_A2A_URL || 'http://127.0.0.1:9901',
       agents: ['tester', 'skyla', 'heker3', 'heker4'],
     },
+    {
+      // zahra-muse = VM asisten (Muse Spark). Bukan Hermes: server A2A
+      // bridge di VM-nya menulis tugas ke antrean; agent memprosesnya dan
+      // hasil dikembalikan sinkron. Diteruskan via reverse tunnel STB
+      // (100.105.150.118:18789 -> VM:8789). Latensi lebih tinggi dari
+      // head Hermes — pakai timeoutMs besar / remote-queue untuk tugas berat.
+      id: 'zahra-muse',
+      name: 'Zahra-Muse (VM asisten)',
+      baseUrl: process.env.MUSE_A2A_URL || 'http://100.105.150.118:18789',
+      agents: ['muse'],
+    },
   ]
 }
 
