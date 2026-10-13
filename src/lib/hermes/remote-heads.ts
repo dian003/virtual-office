@@ -50,6 +50,22 @@ export function listRemoteHeads(): RemoteHead[] {
       baseUrl: process.env.MUSE_A2A_URL || 'http://100.105.150.118:18789',
       agents: ['muse', 'muse-fast'],
     },
+    {
+      // cue-1 = komputer cloud Manus (BUKAN Hermes). Bridge A2A sendiri
+      // di mesinnya (systemd cue-bridge, bind tailnet via userspace
+      // tailscale) dengan 2 agent:
+      // - 'cue': jalur penuh — worker agent lokal dengan tool bash
+      //   (bisa menjalankan 159 skills di ~/skills). Latensi ±30-240 dtk.
+      // - 'cue-fast': jalur cepat — model langsung via 9Router (persona
+      //   memuat daftar skills), tanpa eksekusi. Latensi ±10-25 dtk.
+      // Otak bridge memakai 9Router lewat relay SSH dari STB
+      // (di cue: 127.0.0.1:20129) karena koneksi tailnet keluar dari
+      // cue tidak bisa dipakai untuk data.
+      id: 'cue-1',
+      name: 'Cue-1 (Manus cloud, 159 skills)',
+      baseUrl: process.env.CUE1_A2A_URL || 'http://100.74.205.52:8340',
+      agents: ['cue', 'cue-fast'],
+    },
   ]
 }
 
