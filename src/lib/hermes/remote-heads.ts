@@ -66,6 +66,26 @@ export function listRemoteHeads(): RemoteHead[] {
       baseUrl: process.env.CUE1_A2A_URL || 'http://100.74.205.52:8340',
       agents: ['cue', 'cue-fast'],
     },
+    {
+      // cue-2 = komputer cloud Manus (BUKAN Hermes). Bridge A2A yang
+      // sama seperti cue-1 (systemd cue-bridge di mesinnya), 2 agent:
+      // 'cue' (worker bash, 149 skills unik) dan 'cue-fast' (model
+      // langsung). Otak via relay SSH STB (127.0.0.1:20129 di cue-2).
+      id: 'cue-2',
+      name: 'Cue-2 (Manus cloud, 149 skills)',
+      baseUrl: process.env.CUE2_A2A_URL || 'http://100.120.70.96:8340',
+      agents: ['cue', 'cue-fast'],
+    },
+    {
+      // cue-4 = komputer cloud Manus (BUKAN Hermes). Bridge A2A yang
+      // sama seperti cue-1 (systemd cue-bridge di mesinnya), 2 agent:
+      // 'cue' (worker bash, 62 skills unik) dan 'cue-fast' (model
+      // langsung). Otak via relay SSH STB (127.0.0.1:20129 di cue-4).
+      id: 'cue-4',
+      name: 'Cue-4 (Manus cloud, 62 skills)',
+      baseUrl: process.env.CUE4_A2A_URL || 'http://100.113.25.17:8340',
+      agents: ['cue', 'cue-fast'],
+    },
   ]
 }
 
