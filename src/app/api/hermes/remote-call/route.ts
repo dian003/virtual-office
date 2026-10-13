@@ -33,7 +33,14 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  let body: { head?: string; agent?: string; text?: string; timeoutMs?: number }
+  let body: {
+    head?: string
+    agent?: string
+    text?: string
+    timeoutMs?: number
+    /** Lampiran gambar: base64 murni atau data URI. Diteruskan sebagai A2A file parts. */
+    images?: { data: string; mimeType?: string; name?: string }[]
+  }
   try {
     body = await req.json()
   } catch {
@@ -63,8 +70,20 @@ export async function POST(req: Request) {
       { status: 404 },
     )
   }
+  const fileParts = (body.images ?? []).slice(0, 4).map((img, i) => {
+    const data = img.data.startsWith('data:')
+      ? img.data.slice(img.data.indexOf(',') + 1)
+      : img.data
+    return {
+      file: {
+        name: img.name ?? `image-${i + 1}`,
+        mimeType: img.mimeType ?? 'image/png',
+        bytes: data,
+      },
+    }
+  })
   try {
-    const turn = await sendA2a(head.baseUrl, agent, text, timeoutMs)
+    const turn = await sendA2a(head.baseUrl, agent, text, timeoutMs, fileParts)
     return NextResponse.json({
       head: head.id,
       agent,

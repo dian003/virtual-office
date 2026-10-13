@@ -38,14 +38,17 @@ export function listRemoteHeads(): RemoteHead[] {
     },
     {
       // zahra-muse = VM asisten (Muse Spark). Bukan Hermes: server A2A
-      // bridge di VM-nya menulis tugas ke antrean; agent memprosesnya dan
-      // hasil dikembalikan sinkron. Diteruskan via reverse tunnel STB
-      // (100.105.150.118:18789 -> VM:8789). Latensi lebih tinggi dari
-      // head Hermes — pakai timeoutMs besar / remote-queue untuk tugas berat.
+      // bridge di VM-nya punya 2 agent:
+      // - 'muse': jalur penuh — tugas masuk antrean, agent betulan dengan
+      //   tools/memory memprosesnya (latensi ±1-2 mnt, dukung gambar).
+      // - 'muse-fast': jalur cepat — bridge langsung memanggil model via
+      //   9Router (latensi ±15-25 dtk, vision OK, TANPA tools/data live).
+      // Diteruskan via reverse tunnel STB (100.105.150.118:18789 -> VM:8789).
+      // Lampiran gambar: kirim field "images" di body remote-call.
       id: 'zahra-muse',
       name: 'Zahra-Muse (VM asisten)',
       baseUrl: process.env.MUSE_A2A_URL || 'http://100.105.150.118:18789',
-      agents: ['muse'],
+      agents: ['muse', 'muse-fast'],
     },
   ]
 }

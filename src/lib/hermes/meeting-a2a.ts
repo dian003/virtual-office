@@ -200,6 +200,7 @@ export async function sendA2a(
   slug: string,
   text: string,
   timeoutMs: number,
+  extraParts?: unknown[],
 ): Promise<A2aTurnOk> {
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), timeoutMs)
@@ -212,7 +213,7 @@ export async function sendA2a(
         jsonrpc: '2.0',
         id: `rapat-${Date.now()}`,
         method: 'message/send',
-        params: { message: { role: 'user', parts: [{ text }] } },
+        params: { message: { role: 'user', parts: [{ text }, ...(extraParts ?? [])] } },
       }),
     })
     if (!res.ok) {
