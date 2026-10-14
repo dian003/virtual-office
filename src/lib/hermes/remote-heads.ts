@@ -110,6 +110,17 @@ export function listRemoteHeads(): RemoteHead[] {
       baseUrl: process.env.MUSEKIKOY_A2A_URL || 'http://100.105.150.118:18792',
       agents: ['muse-kikoy'],
     },
+    {
+      // nabil = Muse VM outbound-only (server muse-nabil, peran
+      // Assistent). Pairing self-service lewat fleet web STB (port A2A
+      // 18793, port SSH 10026). Server A2A di VM-nya diteruskan via
+      // reverse tunnel STB (100.105.150.118:18793 -> VM). Balasan A2A
+      // format Task dan sinkron - lolos tes langsung dari STB.
+      id: 'nabil',
+      name: 'Nabil (muse-nabil)',
+      baseUrl: process.env.NABIL_A2A_URL || 'http://100.105.150.118:18793',
+      agents: ['nabil'],
+    },
   ]
 }
 
