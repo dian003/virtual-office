@@ -38,6 +38,8 @@ export default function OfficeApp() {
   const setNewTaskOpen = useOffice((s) => s.setNewTaskOpen)
   const tasks = useOffice((s) => s.tasks)
   const agents = useOffice((s) => s.agents)
+  const remoteAgents = useOffice((s) => s.remoteAgents)
+  const allAgents = [...agents, ...remoteAgents]
   const error = useOffice((s) => s.error)
   const meeting = useOffice((s) => s.meeting)
   const select = useOffice((s) => s.select)
@@ -139,7 +141,7 @@ export default function OfficeApp() {
           <span className="vp-logo">Hermes Office</span>
           <span className={`vp-dot ${backendOnline ? 'ok' : 'bad'}`} />
           <span className="vp-muted vp-topbar-status">
-            {backendOnline ? `${agents.length} agent · ${running} jalan · ${pct}% rilis` : 'backend offline'}
+            {backendOnline ? `${allAgents.length} agent · ${running} jalan · ${pct}% rilis` : 'backend offline'}
           </span>
         </div>
 
@@ -149,7 +151,7 @@ export default function OfficeApp() {
             Ruang rapat{meeting && meeting.state === 'running' ? ' ●' : ''}
           </button>
           <button className="vp-btn vp-btn-ghost" onClick={() => setAgentOpen(true)}>
-            Agent ({agents.length})
+            Agent ({allAgents.length})
           </button>
           <button className="vp-btn vp-btn-ghost" onClick={() => setCronOpen(true)}>
             Cron
@@ -178,7 +180,7 @@ export default function OfficeApp() {
 
       {/* ------------------------------------------------------- agent card */}
       {selected && (() => {
-        const a = agents.find((x) => x.name === selected)
+        const a = allAgents.find((x) => x.name === selected)
         const t = tasks.find((x) => x.id === a?.currentTaskId)
         if (!a) return null
         return (

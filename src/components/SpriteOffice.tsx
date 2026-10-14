@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import type { Agent, Meeting, Task } from '@/types/hermes'
 import { useOffice } from '@/lib/store'
 import { columnOf } from '@/lib/office/board'
@@ -676,12 +676,14 @@ function drawFrame(
 export default function SpriteOffice({ onSelect }: { onSelect: (name: string) => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const agents = useOffice((s) => s.agents)
+  const remoteAgents = useOffice((s) => s.remoteAgents)
+  const allAgents = useMemo(() => [...agents, ...remoteAgents], [agents, remoteAgents])
   const tasks = useOffice((s) => s.tasks)
   const meeting = useOffice((s) => s.meeting)
   const selected = useOffice((s) => s.selectedAgent)
   const openTask = useOffice((s) => s.openTask)
-  const data = useRef({ agents, tasks, meeting, selected, onSelect, openTask })
-  data.current = { agents, tasks, meeting, selected, onSelect, openTask }
+  const data = useRef({ agents: allAgents, tasks, meeting, selected, onSelect, openTask })
+  data.current = { agents: allAgents, tasks, meeting, selected, onSelect, openTask }
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -761,7 +763,7 @@ export default function SpriteOffice({ onSelect }: { onSelect: (name: string) =>
   return (
     <div className="absolute inset-0 overflow-auto pt-14 vp-sprite-office" aria-label="Kantor pixel 2D">
       <div className="vp-sprite-hud" aria-hidden="true">
-        <span>HERMES OFFICE</span><span>{agents.length} agent</span><span>{tasks.length} tugas</span><span>klik sprite untuk pilih</span>
+        <span>HERMES OFFICE</span><span>{allAgents.length} agent</span><span>{tasks.length} tugas</span><span>klik sprite untuk pilih</span>
       </div>
       <canvas
         ref={canvasRef}
@@ -770,7 +772,7 @@ export default function SpriteOffice({ onSelect }: { onSelect: (name: string) =>
         aria-label="Peta kantor isometrik: ruang rapat, area kerja, lounge, dan lobi sama seperti mode 3D. Klik karakter untuk memilih agent."
       />
       <div className="sr-only" aria-label="Pilih agent">
-        {agents.map((agent) => (
+        {allAgents.map((agent) => (
           <button key={agent.name} onClick={() => onSelect(agent.name)}>{agent.displayName}, {agent.status}</button>
         ))}
       </div>

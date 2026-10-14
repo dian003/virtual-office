@@ -75,6 +75,7 @@ export default function ChatPanel({
   const [sessions, setSessions] = useState<Session[]>([])
   const [agents, setAgents] = useState<string[]>([])
   const [profiles, setProfiles] = useState<string[]>([])
+  const [displayNames, setDisplayNames] = useState<Record<string, string>>({})
 
   /** null = the conversation list; a name = that chat. */
   const [openAgent, setOpenAgent] = useState<string | null>(null)
@@ -100,6 +101,7 @@ export default function ChatPanel({
       sessions?: Session[]
       agents?: string[]
       profiles?: string[]
+      displayNames?: Record<string, string>
     }>('/api/hermes/chat', { cache: 'no-store' })
     if (!res.ok) {
       setErr(res.error || 'gagal memuat daftar percakapan')
@@ -109,6 +111,7 @@ export default function ChatPanel({
     setSessions(res.data?.sessions || [])
     setAgents(res.data?.agents || [])
     setProfiles(res.data?.profiles || [])
+    setDisplayNames(res.data?.displayNames || {})
     setLoading(false)
   }
 
@@ -259,7 +262,7 @@ export default function ChatPanel({
               {initials(openAgent)}
             </span>
             <div className="vp-chat-head-name">
-              <b>{openAgent}</b>
+              <b>{displayNames[openAgent] ?? openAgent}</b>
               <i>{session ? `${session.messageCount} pesan` : 'percakapan baru'}</i>
             </div>
           </div>
@@ -323,7 +326,7 @@ export default function ChatPanel({
                   </span>
                   <span className="vp-chat-row-main">
                     <span className="vp-chat-row-top">
-                      <b>{name}</b>
+                      <b>{displayNames[name] ?? name}</b>
                       <i>{s ? when(s.updatedAt) : ''}</i>
                     </span>
                     <span className="vp-chat-row-sub">

@@ -11,6 +11,18 @@ import {
 import { listAgents, listProfiles, listTasks } from '@/lib/hermes/kanban'
 import { visibleNames } from '@/lib/hermes/office-membership'
 import { assertLocalWriteRequest } from '@/lib/local-guard'
+import { isRemoteAgentKey, remoteKey, resolveRemoteAgent } from '@/lib/hermes/remote-agents'
+import { sendA2a } from '@/lib/hermes/meeting-a2a'
+import { getRemoteHeadStatuses } from '@/lib/hermes/remote-health'
+import {
+  appendRemoteChatTurn,
+  getRemoteChatThread,
+  listRemoteChatSessions,
+  remoteChatInFlight,
+  remoteChatTurnEnd,
+  remoteChatTurnStart,
+  resetRemoteChatThread,
+} from '@/lib/hermes/remote-chat'
 
 export const dynamic = 'force-dynamic'
 
@@ -42,9 +54,11 @@ export async function GET(req: NextRequest) {
     // dipoll tiap beberapa detik; yang ini hanya membaca indeks sesi dan memori proses.
     if (req.nextUrl.searchParams.get('live') === '1') {
       const now = Date.now()
+      const sessions = [...(await listChatSessions()), ...(await listRemoteChatSessions())]
+      const inFlight = [...chatTurnsInFlight(), ...remoteChatInFlight()]
       return NextResponse.json({
-        live: chatLiveAgents(await listChatSessions(), chatTurnsInFlight(), now),
-        inFlight: chatTurnsInFlight(),
+        live: chatLiveAgents(sessions, inFlight, now),
+        inFlight,
         at: new Date(now).toISOString(),
       })
     }
@@ -56,8 +70,22 @@ export async function GET(req: NextRequest) {
       // install's profile list, which is an internal detail, not a user decision.
       const profiles = await chatProfiles()
       const known = new Set(profiles)
+      // Agent remote yang head-nya sedang LIVE ikut tampil di daftar chat.
+      // Mereka bukan profil Hermes: kuncinya "remote:<head>/<agent>" dan
+      // thread-nya disimpan di thread store remote, bukan state.db.
+      const remoteLive = new Map<string, string>()
+      for (const h of await getRemoteHeadStatuses()) {
+        if (!h.live) continue
+        for (const slug of h.agents) {
+          remoteLive.set(remoteKey(h.id, slug), `${slug} · ${h.name.split(' (')[0]}`)
+        }
+      }
+      const remoteNames = [...remoteLive.keys()].sort()
+      const sessions = [...(await listChatSessions()), ...(await listRemoteChatSessions())].sort((a, b) =>
+        b.updatedAt.localeCompare(a.updatedAt),
+      )
       return NextResponse.json({
-        sessions: await listChatSessions(),
+        sessions,
         /**
          * Everyone you can talk to: every profile, plus any board assignee that has
          * no profile yet (so the list matches the office floor).
@@ -65,16 +93,26 @@ export async function GET(req: NextRequest) {
         // Hidden profiles are filtered here too. `default` in particular used to be
         // special-cased IN (`|| n === 'default'`), which is why the install's own
         // orchestrator profile showed up as somebody you could chat with.
-        agents: visibleNames(
-          (await listAgents(await listTasks()))
-            .map((a) => a.name)
-            .filter((n) => known.has(n)),
-        ),
+        agents: [
+          ...visibleNames(
+            (await listAgents(await listTasks()))
+              .map((a) => a.name)
+              .filter((n) => known.has(n)),
+          ),
+          ...remoteNames,
+        ],
         /** Profiles that exist. Used to tell "can chat" from "needs a profile". */
-        profiles,
+        profiles: [...profiles, ...remoteNames],
+        /** Label tampil untuk kunci agent remote. */
+        displayNames: Object.fromEntries(remoteLive),
       })
     }
 
+    if (isRemoteAgentKey(agent)) {
+      const thread = await getRemoteChatThread(agent)
+      if (!thread) return NextResponse.json({ agent, session: null, messages: [] })
+      return NextResponse.json({ agent, session: thread.session, messages: thread.messages })
+    }
     const session = await getChatSession(agent)
     if (!session) {
       // No thread yet is a normal state, not an error: the panel shows an empty
@@ -109,6 +147,30 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    // Agent remote: bukan profil Hermes — pesannya diteruskan lewat A2A ke
+    // head-nya, dan thread-nya disimpan di thread store remote (persisten di
+    // DATA_DIR), bukan di state.db Hermes.
+    if (isRemoteAgentKey(agent)) {
+      const resolved = resolveRemoteAgent(agent)
+      if (!resolved) {
+        return bad(`agent remote "${agent}" tidak dikenal`)
+      }
+      remoteChatTurnStart(agent)
+      try {
+        const turn = await sendA2a(resolved.baseUrl, resolved.agentSlug, message.trim(), 180_000)
+        const session = await appendRemoteChatTurn(
+          agent,
+          resolved.headId,
+          resolved.agentSlug,
+          message.trim(),
+          turn.text,
+        )
+        return NextResponse.json({ success: true, session, reply: turn.text })
+      } finally {
+        remoteChatTurnEnd(agent)
+      }
+    }
+
     // The agent name IS the profile name. One agent, one profile, one memory store.
     const profile = agent
 
@@ -137,6 +199,10 @@ export async function DELETE(req: NextRequest) {
   const agent = req.nextUrl.searchParams.get('agent')
   if (!agent) return bad('agent wajib')
   try {
+    if (isRemoteAgentKey(agent)) {
+      await resetRemoteChatThread(agent)
+      return NextResponse.json({ success: true, agent, reset: true })
+    }
     await resetChatSession(agent)
     return NextResponse.json({ success: true, agent, reset: true })
   } catch (err) {

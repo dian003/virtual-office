@@ -21,6 +21,8 @@ import type { AgentDivision, AgentRole } from '@/types/hermes'
 import { ROLE_LABEL, soulFor } from '@/lib/hermes/soul'
 import { parseDomains, ownersForDomains } from '@/lib/hermes/a2a'
 import { listServedAgents, removeServedAgent, upsertServedAgent } from '@/lib/hermes/a2a-served'
+import { remoteKey } from '@/lib/hermes/remote-agents'
+import { getRemoteHeadStatuses } from '@/lib/hermes/remote-health'
 import { gatewayStartMs, needsRestart } from '@/lib/hermes/doctor'
 import { stat } from 'node:fs/promises'
 import { deleteAvatar } from '@/lib/office/db'
@@ -96,8 +98,33 @@ export async function GET() {
       domains: a.domains ?? [],
       description: servedDesc.get(a.name) ?? null,
     }))
+    // Agent remote: baris read-only untuk head A2A di luar Hermes.
+    // profile:false -> panel tidak menawarkan kill/ganti model (lihat
+    // komentar panel); semua aksi profil ditolak eksplisit di POST di bawah.
+    const remoteRows = (await getRemoteHeadStatuses()).flatMap((h) =>
+      h.agents.map((slug) => ({
+        name: remoteKey(h.id, slug),
+        displayName: `${slug} · ${h.name.split(' (')[0]}`,
+        total: 0,
+        profile: false,
+        inOffice: true,
+        model: null as string | null,
+        role: 'backend' as const,
+        division: 'tech' as const,
+        soulExists: false,
+        domains: [] as string[],
+        a2a: 'served' as const,
+        reason: null as string | null,
+        remote: true,
+        headId: h.id,
+        headName: h.name,
+        agentSlug: slug,
+        live: h.live,
+        baseUrl: h.baseUrl,
+      })),
+    )
     return NextResponse.json({
-      available: roster.map((name, i) => ({
+      available: [...roster.map((name, i) => ({
         name,
         total: counts.get(name) ?? 0,
         /** True when the profile exists on disk (not just as a task assignee). */
@@ -125,7 +152,7 @@ export async function GET() {
             : profiles.includes(name)
               ? 'unknown'
               : 'no_profile',
-      })),
+      })), ...remoteRows],
       hidden: hiddenNames(),
       /** Batas izin per role (TAHAP 5.4), dari tabel tunggal di control.ts. */
       permissions: agentPermissionSummary(),
@@ -189,6 +216,21 @@ export async function POST(req: NextRequest) {
   if (!name) {
     return NextResponse.json(
       { error: { code: 'invalid_request', message: 'name is required', status: 400 } },
+      { status: 400 },
+    )
+  }
+  // Agent remote bukan profil Hermes: tidak ada aksi profil yang berlaku
+  // (spawn/hide/kill/create/set-model/serve/unserve). Tolak eksplisit supaya
+  // tidak ada yang mengira operasinya berhasil.
+  if (name.startsWith('remote:')) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'invalid_request',
+          message: `agent remote "${name}" tidak dikelola lewat menu profil — spawn/hide/kill/ganti model hanya untuk profil Hermes`,
+          status: 400,
+        },
+      },
       { status: 400 },
     )
   }

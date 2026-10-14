@@ -10,7 +10,9 @@ import {
 } from '@/lib/office/db'
 import { dummyRoster } from '@/lib/office/dummy-roster'
 import { assertLocalWriteRequest } from '@/lib/local-guard'
-import type { AgentDivision } from '@/types/hermes'
+import type { Agent, AgentDivision } from '@/types/hermes'
+import { getRemoteHeadStatuses } from '@/lib/hermes/remote-health'
+import { remoteKey } from '@/lib/hermes/remote-agents'
 
 export const dynamic = 'force-dynamic'
 
@@ -27,9 +29,28 @@ export async function GET() {
     // First run: populate the dummy roster so the building is not empty. Idempotent
     // — it only fires when the table has no rows at all.
     seedAvatars(dummyRoster())
+    // Agent remote yang head-nya LIVE ikut menjadi roster ruangan: scene
+    // mensintesis avatar untuk roster yang belum punya baris DB (masuk lewat
+    // pintu utama). Head yang DOWN tidak dimasukkan — avatarnya keluar sendiri.
+    // Roster ini TIDAK dipakai untuk penugasan task (tetap profil Hermes).
+    const remoteAgents: Agent[] = (await getRemoteHeadStatuses())
+      .filter((h) => h.live)
+      .flatMap((h) =>
+        h.agents.map((slug): Agent => ({
+          name: remoteKey(h.id, slug),
+          displayName: `${slug} · ${h.name.split(' (')[0]}`,
+          role: 'backend',
+          division: 'tech',
+          soulExists: false,
+          deskIndex: null,
+          status: 'idle',
+          currentTaskId: null,
+        })),
+      )
     return NextResponse.json({
       name: getOfficeName(),
       avatars: listAvatars(),
+      remoteAgents,
     })
   } catch (err) {
     return NextResponse.json(

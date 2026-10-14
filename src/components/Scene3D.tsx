@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { createScene, type OfficeScene } from '@/lib/office/scene'
 import { useOffice } from '@/lib/store'
 import type { AgentDivision } from '@/types/hermes'
@@ -21,6 +21,9 @@ export default function Scene3D({ onScene, onDummy, onBoard, onName }: Props) {
   const sceneRef = useRef<OfficeScene | null>(null)
 
   const agents = useOffice((s) => s.agents)
+  const remoteAgents = useOffice((s) => s.remoteAgents)
+  /** Roster yang digambar scene: profil Hermes + head remote yang LIVE. */
+  const allAgents = useMemo(() => [...agents, ...remoteAgents], [agents, remoteAgents])
   const avatars = useOffice((s) => s.avatars)
   const tasks = useOffice((s) => s.tasks)
   const meeting = useOffice((s) => s.meeting)
@@ -75,7 +78,7 @@ export default function Scene3D({ onScene, onDummy, onBoard, onName }: Props) {
   // them are real agents. Both feed one reconcile so a name can never be drawn
   // twice.
   useEffect(() => {
-    sceneRef.current?.syncAvatars(avatars, agents)
+    sceneRef.current?.syncAvatars(avatars, allAgents)
   }, [avatars, agents])
 
   useEffect(() => {

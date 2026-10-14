@@ -24,6 +24,12 @@ type Row = {
   total: number
   /** The profile exists on disk, not only as a task assignee. */
   profile: boolean
+  /** Label tampil untuk agent remote (kunci "remote:<head>/<agent>"). */
+  displayName?: string
+  /** True untuk baris agent remote — tidak ada aksi profil yang berlaku. */
+  remote?: boolean
+  headName?: string
+  live?: boolean
   inOffice: boolean
   reason: string | null
   /** The profile's default model, when it has one. */
@@ -337,6 +343,26 @@ export default function AgentSpawnPanel({
 
   /** Badge role + divisi + indikator soul + status A2A. Aman bila field null (backend lama). */
   function badges(r: Row) {
+    // Agent remote bukan profil Hermes: tidak ada checklist A2A gateway di
+    // sini — yang ditampilkan identitas head-nya dan status health-nya.
+    if (r.remote) {
+      return (
+        <span style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap', marginTop: 2 }}>
+          <span className="vp-chip" title={`head A2A: ${r.headName ?? ''}`}>
+            Remote · {r.headName ?? 'head'}
+          </span>
+          {r.live ? (
+            <span className="vp-chip" title="health endpoint head menjawab">
+              LIVE
+            </span>
+          ) : (
+            <span className="vp-tag-warn" title="head tidak terjangkau — chat tidak akan dijawab">
+              DOWN
+            </span>
+          )}
+        </span>
+      )
+    }
     const roleLabel = r.role ? (ROLE_LABEL as Record<string, string>)[r.role] ?? r.role : null
     const divLabel = r.division ? (DIVISION_LABEL as Record<string, string>)[r.division] ?? null : null
     return (
@@ -640,7 +666,7 @@ export default function AgentSpawnPanel({
           <div key={r.name} className="vp-agent-row">
             <div className="vp-agent-meta">
               <b>
-                {r.name}
+                {r.displayName ?? r.name}
                 {!r.profile && <span className="vp-tag-warn">tanpa profil</span>}
               </b>
               <i>{r.total} tugas</i>
@@ -679,17 +705,21 @@ export default function AgentSpawnPanel({
                 sending it to `kill` purged its tasks permanently while the
                 button said "tanpa menghapus apa pun". */}
             <div className="flex gap-2">
-              <button
-                className="vp-btn"
-                disabled={busy === r.name}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  void act('hide', r.name)
-                }}
-                title="Keluarkan nama ini dari kantor tanpa menghapus apa pun"
-              >
-                {busy === r.name ? '…' : 'Sembunyikan'}
-              </button>
+              {/* Agent remote tidak punya konsep hide/show profil — barisnya
+                  selalu tampil selama head-nya terdaftar di registry. */}
+              {!r.remote && (
+                <button
+                  className="vp-btn"
+                  disabled={busy === r.name}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    void act('hide', r.name)
+                  }}
+                  title="Keluarkan nama ini dari kantor tanpa menghapus apa pun"
+                >
+                  {busy === r.name ? '…' : 'Sembunyikan'}
+                </button>
+              )}
               {r.profile && (
                 <button
                   className={`vp-btn vp-btn-danger ${confirmKill === r.name ? 'vp-btn-armed' : ''}`}
@@ -728,7 +758,7 @@ export default function AgentSpawnPanel({
               <div key={r.name} className="vp-agent-row off">
                 <div className="vp-agent-meta">
                   <b>
-                    {r.name}
+                    {r.displayName ?? r.name}
                     {!r.profile && <span className="vp-tag-warn">tanpa profil</span>}
                   </b>
                   <i>

@@ -30,6 +30,10 @@ type State = {
   /** The office's own store (data/office.db), separate from the Hermes CLI data. */
   officeName: string
   avatars: AvatarState[]
+  /** Agent remote yang head-nya LIVE — roster tambahan untuk scene/sprite.
+   *  BUKAN bagian dari `agents`: penugasan task kanban dan peserta rapat
+   *  tetap khusus profil Hermes. */
+  remoteAgents: Agent[]
 
   /**
    * Kesehatan sistem, dinilai dari data Hermes yang sebenarnya.
@@ -80,6 +84,7 @@ export const useOffice = create<State>((set) => ({
 
   officeName: 'Hermes Office',
   avatars: [],
+  remoteAgents: [],
 
   // Mulai dari TIDAK TAHU, bukan dari hijau. Sistem yang belum selesai membaca keadaannya
   // tidak boleh tampil sehat — itu kebohongan yang paling gampang terjadi.
@@ -141,11 +146,13 @@ export const useOffice = create<State>((set) => ({
     const res = await fetchJson<{
       name?: string
       avatars?: AvatarState[]
+      remoteAgents?: Agent[]
     }>('/api/hermes/office', { cache: 'no-store' })
     if (!res.ok || !res.data) return
     set({
       officeName: res.data.name || 'Hermes Office',
       avatars: res.data.avatars || [],
+      remoteAgents: res.data.remoteAgents || [],
     })
   },
 
