@@ -350,7 +350,7 @@ export default function ChatPanel({
             {loading && <div className="vp-muted">memuat riwayat…</div>}
             {!loading && !messages.length && (
               <div className="vp-chat-empty">
-                Mulai percakapan dengan <b>{openAgent}</b>.
+                Mulai percakapan dengan <b>{displayNames[openAgent] ?? openAgent}</b>.
                 <br />
                 <span className="vp-muted">
                   Pesan disimpan di memory agent ini dan tetap ada setelah aplikasi restart.
