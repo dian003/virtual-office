@@ -121,6 +121,17 @@ export function listRemoteHeads(): RemoteHead[] {
       baseUrl: process.env.NABIL_A2A_URL || 'http://100.105.150.118:18793',
       agents: ['nabil'],
     },
+    {
+      // paitno = Muse VM outbound-only (peran Asisten Daily untuk
+      // Skyla). Pairing self-service lewat fleet web STB (port A2A
+      // 18794, port SSH 10027). Server A2A di VM-nya diteruskan via
+      // reverse tunnel STB (100.105.150.118:18794 -> VM). Balasan A2A
+      // format Task dan sinkron - lolos tes langsung dari STB.
+      id: 'paitno',
+      name: 'Paitno (Asisten Daily Skyla)',
+      baseUrl: process.env.PAITNO_A2A_URL || 'http://100.105.150.118:18794',
+      agents: ['paitno'],
+    },
   ]
 }
 
