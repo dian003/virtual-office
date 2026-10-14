@@ -9,6 +9,8 @@ import {
 } from '@/lib/hermes/meeting'
 import { listAgents, listTasks } from '@/lib/hermes/kanban'
 import { listServedAgents } from '@/lib/hermes/a2a-served'
+import { listRemoteAgents } from '@/lib/hermes/remote-agents'
+import { getRemoteHeadStatuses } from '@/lib/hermes/remote-health'
 import { visibleNames } from '@/lib/hermes/office-membership'
 import { assertLocalWriteRequest } from '@/lib/local-guard'
 
@@ -80,6 +82,16 @@ export async function POST(req: NextRequest) {
       ...visibleNames(agentList.map((a) => a.name)),
       ...servedNames,
     ])
+    // Agent remote dari head yang LIVE ikut jadi peserta sah. Kunci kanonik
+    // "remote:<headId>/<slug>" — untuk mode a2a mereka tidak mensyaratkan
+    // served-gateway lokal (head-nya sendiri yang melayani; syarat itu
+    // dilepas di startMeeting khusus kunci remote).
+    const liveHeads = new Set(
+      (await getRemoteHeadStatuses().catch(() => [])).filter((s) => s.live).map((s) => s.id),
+    )
+    for (const ra of listRemoteAgents()) {
+      if (liveHeads.has(ra.headId)) known.add(ra.key.toLowerCase())
+    }
     const rawPicked: string[] = (Array.isArray(body?.participants) ? body.participants : [])
       .map((p: unknown) => String(p))
     const unknown = rawPicked.filter((p: string) => !known.has(p.toLowerCase()))

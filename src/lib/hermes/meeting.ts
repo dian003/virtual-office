@@ -16,6 +16,7 @@ import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { Meeting, MeetingMode, MeetingTurn } from '@/types/hermes'
 import {
+  a2aEndpoint,
   buildCrossPrompt,
   buildMinutesPrompt,
   buildOpeningPrompt,
@@ -26,6 +27,7 @@ import {
   sendA2a,
 } from './meeting-a2a'
 import { listServedAgents } from './a2a-served'
+import { isRemoteAgentKey, resolveRemoteAgent } from './remote-agents'
 
 const MAX_TURNS = Number(process.env.MAX_MEETING_TURNS || 10)
 const MAX_PARTICIPANTS = 4
@@ -303,10 +305,10 @@ async function complete(system: string, user: string): Promise<string> {
 
 function participantSystem(meeting: Meeting, speaker: string): string {
   return [
-    `You are ${speaker}, an expert autonomous engineer in a technical meeting.`,
+    `You are ${speakerLabel(speaker)}, an expert autonomous engineer in a technical meeting.`,
     '',
     `TOPIC: ${meeting.topic}`,
-    `PARTICIPANTS: ${meeting.participants.join(', ')}`,
+    `PARTICIPANTS: ${meeting.participants.map(speakerLabel).join(', ')}`,
     `ROUND: ${meeting.phase}`,
     '',
     'RULES:',
@@ -366,8 +368,8 @@ async function persist(meeting: Meeting): Promise<string | null> {
     const body = [
       `# ${meeting.topic}`,
       '',
-      `- peserta: ${meeting.participants.join(', ')}`,
-      `- pembawa acara: ${meeting.moderator}`,
+      `- peserta: ${meeting.participants.map(speakerLabel).join(', ')}`,
+      `- pembawa acara: ${speakerLabel(meeting.moderator)}`,
       `- mode: ${meeting.mode} — ${modeLabel}`,
       `- giliran: ${doneCount}`,
       statusLine,
@@ -403,13 +405,40 @@ const A2A_URL = peerBaseUrl()
 const A2A_TURN_TIMEOUT_MS = Number(process.env.MEETING_A2A_TIMEOUT_MS || 280_000)
 
 /**
+ * Label tampil pembicara: peserta remote ("remote:<head>/<slug>") ditampilkan
+ * sebagai displayName ("muse-fast · Zahra-Muse"); peserta lokal apa adanya.
+ * Routing internal (sendA2a) tetap memakai kunci kanonik — label hanya untuk
+ * prompt, transkrip, arsip, dan UI.
+ */
+export function speakerLabel(speaker: string): string {
+  if (!isRemoteAgentKey(speaker)) return speaker
+  return resolveRemoteAgent(speaker)?.displayName ?? speaker
+}
+
+/**
+ * Target A2A per pembicara: peserta remote dirutekan ke baseUrl head-nya
+ * sendiri (tidak lewat gateway lokal), peserta lokal seperti semula.
+ */
+function a2aTarget(speaker: string): { baseUrl: string; slug: string } {
+  const info = isRemoteAgentKey(speaker) ? resolveRemoteAgent(speaker) : null
+  if (info) return { baseUrl: info.baseUrl, slug: info.agentSlug }
+  return { baseUrl: A2A_URL, slug: speaker }
+}
+
+/** URL penuh yang dikirim ke S supaya ia memanggil T via a2a_call miliknya. */
+function nextAgentUrl(next: string): string {
+  const t = a2aTarget(next)
+  return a2aEndpoint(t.baseUrl, t.slug)
+}
+
+/**
  * Ronde pembuka mode A2A: kantor memanggil tiap peserta lewat A2A (URL /slug)
  * dengan topik rapat; pernyataan pembuka dicatat verbatim + ctx-nya.
  * Gagal = giliran 'failed' + sebab, BUKAN karangan.
  */
 async function runA2aOpening(meeting: Meeting): Promise<string[]> {
   meeting.phase = 'opening'
-  meeting.currentSpeaker = meeting.moderator
+  meeting.currentSpeaker = speakerLabel(meeting.moderator)
   const order = [meeting.moderator, ...meeting.participants.filter((p) => p !== meeting.moderator)]
   const points = new Map<string, string>()
   for (const speaker of order) {
@@ -417,17 +446,24 @@ async function runA2aOpening(meeting: Meeting): Promise<string[]> {
     // dulu (jangan bunuh fetch A2A di tengah), lalu berhenti SEBELUM giliran
     // berikutnya dimulai — bukan di tengah tulis arsip.
     if (meeting.cancelRequested) break
-    meeting.currentSpeaker = speaker
-    const prompt = buildOpeningPrompt({ speaker, topic: meeting.topic, participants: meeting.participants })
+    // Peserta remote dirutekan ke baseUrl head-nya; label tampil = displayName.
+    const label = speakerLabel(speaker)
+    const target = a2aTarget(speaker)
+    meeting.currentSpeaker = label
+    const prompt = buildOpeningPrompt({
+      speaker: label,
+      topic: meeting.topic,
+      participants: meeting.participants.map(speakerLabel),
+    })
     try {
-      const { text, ctx } = await sendA2a(A2A_URL, speaker, prompt, A2A_TURN_TIMEOUT_MS)
-      push(meeting, { round: 0, speaker, kind: 'opening', text, ts: Date.now(), ctx })
+      const { text, ctx } = await sendA2a(target.baseUrl, target.slug, prompt, A2A_TURN_TIMEOUT_MS)
+      push(meeting, { round: 0, speaker: label, kind: 'opening', text, ts: Date.now(), ctx })
       if (ctx) meeting.ctxIds!.push(ctx)
       points.set(speaker, text)
     } catch (err) {
       push(meeting, {
         round: 0,
-        speaker,
+        speaker: label,
         kind: 'failed',
         text: failedTurnText((err as Error).message),
         ts: Date.now(),
@@ -455,16 +491,24 @@ async function runA2aCross(meeting: Meeting, points: string[]): Promise<void> {
     const speaker = order[i]
     const next = order[(i + 1) % order.length]
     const point = points[i] || '(pernyataan pembuka tak tersedia — sampaikan posisimu sendiri)'
-    meeting.currentSpeaker = speaker
-    const prompt = buildCrossPrompt({ speaker, next, topic: meeting.topic, point })
+    const label = speakerLabel(speaker)
+    const target = a2aTarget(speaker)
+    meeting.currentSpeaker = label
+    const prompt = buildCrossPrompt({
+      speaker: label,
+      next: speakerLabel(next),
+      nextUrl: nextAgentUrl(next),
+      topic: meeting.topic,
+      point,
+    })
     try {
-      const { text, ctx } = await sendA2a(A2A_URL, speaker, prompt, A2A_TURN_TIMEOUT_MS)
-      push(meeting, { round: 1, speaker, kind: 'speech', text, ts: Date.now(), ctx })
+      const { text, ctx } = await sendA2a(target.baseUrl, target.slug, prompt, A2A_TURN_TIMEOUT_MS)
+      push(meeting, { round: 1, speaker: label, kind: 'speech', text, ts: Date.now(), ctx })
       if (ctx) meeting.ctxIds!.push(ctx)
     } catch (err) {
       push(meeting, {
         round: 1,
-        speaker,
+        speaker: label,
         kind: 'failed',
         text: failedTurnText((err as Error).message),
         ts: Date.now(),
@@ -482,13 +526,15 @@ async function runA2aMinutes(meeting: Meeting): Promise<void> {
     return
   }
   meeting.phase = 'minutes'
-  meeting.currentSpeaker = meeting.moderator
+  const modLabel = speakerLabel(meeting.moderator)
+  const modTarget = a2aTarget(meeting.moderator)
+  meeting.currentSpeaker = modLabel
   try {
     const { text } = await sendA2a(
-      A2A_URL,
-      meeting.moderator,
+      modTarget.baseUrl,
+      modTarget.slug,
       buildMinutesPrompt({
-        moderator: meeting.moderator,
+        moderator: modLabel,
         topic: meeting.topic,
         transcript: transcript(meeting),
       }),
@@ -500,7 +546,7 @@ async function runA2aMinutes(meeting: Meeting): Promise<void> {
   }
   push(meeting, {
     round: 2,
-    speaker: meeting.moderator,
+    speaker: modLabel,
     kind: 'minutes',
     text: 'Notulen tersimpan.',
     ts: Date.now(),
@@ -619,14 +665,14 @@ async function run(meeting: Meeting): Promise<void> {
 
     meeting.state = 'running'
     meeting.phase = 'opening'
-    meeting.currentSpeaker = meeting.moderator
+    meeting.currentSpeaker = speakerLabel(meeting.moderator)
     const opening = await complete(
       participantSystem(meeting, meeting.moderator),
       `Buka rapat ini: nyatakan masalahnya dalam 2 kalimat, lalu lempar pertanyaan pertama ke peserta lain.`,
     )
     push(meeting, {
       round: 0,
-      speaker: meeting.moderator,
+      speaker: speakerLabel(meeting.moderator),
       kind: 'opening',
       text: opening,
       ts: Date.now(),
@@ -637,7 +683,7 @@ async function run(meeting: Meeting): Promise<void> {
       for (const speaker of speakers) {
         if (meeting.cancelRequested) break
         if (meeting.turns.filter((t) => t.kind !== 'minutes').length >= MAX_TURNS) break
-        meeting.currentSpeaker = speaker
+        meeting.currentSpeaker = speakerLabel(speaker)
         const ask =
           round === 1
             ? `Berikan posisi teknismu tentang topik ini.`
@@ -646,7 +692,7 @@ async function run(meeting: Meeting): Promise<void> {
           participantSystem(meeting, speaker),
           `${ask}\n\nTRANSCRIPT SO FAR:\n${transcript(meeting)}`,
         )
-        push(meeting, { round, speaker, kind: 'speech', text: reply, ts: Date.now() })
+        push(meeting, { round, speaker: speakerLabel(speaker), kind: 'speech', text: reply, ts: Date.now() })
       }
       if (meeting.turns.filter((t) => t.kind !== 'minutes').length >= MAX_TURNS) break
       if (meeting.cancelRequested) break
@@ -657,7 +703,7 @@ async function run(meeting: Meeting): Promise<void> {
       return
     }
     meeting.phase = 'minutes'
-    meeting.currentSpeaker = meeting.moderator
+    meeting.currentSpeaker = speakerLabel(meeting.moderator)
     const minutes = await complete(
       MINUTES_SYSTEM,
       `TOPIC: ${meeting.topic}\n\nTRANSCRIPT:\n${transcript(meeting)}`,
@@ -665,7 +711,7 @@ async function run(meeting: Meeting): Promise<void> {
     meeting.minutes = minutes
     push(meeting, {
       round: rounds + 1,
-      speaker: meeting.moderator,
+      speaker: speakerLabel(meeting.moderator),
       kind: 'minutes',
       text: 'Notulen tersimpan.',
       ts: Date.now(),
@@ -712,7 +758,12 @@ export async function startMeeting(input: {
   if (mode === 'a2a') {
     // Cabang tolak: peserta bukan agent A2A → rapat TIDAK DIMULAI, sebut siapa.
     const served = await listServedAgents().catch(() => [])
-    const missing = missingServed(participants, served)
+    // Peserta remote dilayani head-nya sendiri — syarat served-gateway lokal
+    // tidak berlaku untuk mereka (ke-LIVE-an head divalidasi di route).
+    const missing = missingServed(
+      participants.filter((p) => !isRemoteAgentKey(p)),
+      served,
+    )
     if (missing.length) {
       const { formatReject } = await import('./meeting-a2a')
       throw new Error(formatReject(missing))

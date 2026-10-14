@@ -25,10 +25,35 @@ export default function MeetingPanel({
   onClose: () => void
 }) {
   const agents = useOffice((s) => s.agents)
+  const remoteAgents = useOffice((s) => s.remoteAgents)
   const meeting = useOffice((s) => s.meeting)
   const configured = useOffice((s) => s.meetingConfigured)
   const history = useOffice((s) => s.meetingHistory)
   const refresh = useOffice((s) => s.refreshMeeting)
+
+  /**
+   * Peserta yang bisa dipilih: profil Hermes + agent remote dari head yang
+   * LIVE (store.remoteAgents hanya berisi head live — konsisten dengan Chat
+   * dan ruangan 3D). Kunci remote "remote:<head>/<slug>" dipakai apa adanya
+   * sebagai identitas peserta; yang tampil = displayName.
+   */
+  const pickable = [...agents, ...remoteAgents]
+  const displayOf = (name: string) => {
+    const hit = pickable.find((a) => a.name === name)
+    if (hit) return hit.displayName
+    // Head mati di tengah rapat: tetap tampilkan label yang bisa dibaca.
+    if (name.startsWith('remote:')) {
+      const rest = name.slice('remote:'.length)
+      const i = rest.indexOf('/')
+      return i > 0 ? `${rest.slice(i + 1)} · ${rest.slice(0, i)}` : name
+    }
+    return name
+  }
+  const chipRole = (a: { name: string; displayName: string; status: string }) => {
+    if (!a.name.startsWith('remote:')) return a.status
+    const i = a.displayName.indexOf(' · ')
+    return i >= 0 ? `remote · ${a.displayName.slice(i + 3)}` : 'remote'
+  }
 
   const [screen, setScreen] = useState<'list' | 'new'>('list')
   const [topic, setTopic] = useState('')
@@ -294,7 +319,7 @@ export default function MeetingPanel({
                 </div>
                 <div className="vp-kv">
                   <span>peserta</span>
-                  <b>{meeting.participants.join(', ') || '—'}</b>
+                  <b>{meeting.participants.map(displayOf).join(', ') || '—'}</b>
                 </div>
                 <div className="vp-kv">
                   <span>giliran</span>
@@ -421,19 +446,19 @@ export default function MeetingPanel({
             placeholder="Rencana rilis endpoint refund"
           />
 
-          <label className="vp-sub">PESERTA (2–4) · {agents.length} agent aktif</label>
+          <label className="vp-sub">PESERTA (2–4) · {pickable.length} agent aktif</label>
           <div className="flex flex-wrap gap-2">
-            {agents.map((a) => (
+            {pickable.map((a) => (
               <button
                 key={a.name}
                 className={`vp-chip-btn ${picked.includes(a.name) ? 'on' : ''}`}
                 onClick={() => toggle(a.name)}
               >
                 {a.displayName}
-                <i className="vp-chip-role">{a.status}</i>
+                <i className="vp-chip-role">{chipRole(a)}</i>
               </button>
             ))}
-            {!agents.length && <span className="vp-muted">belum ada agent aktif</span>}
+            {!pickable.length && <span className="vp-muted">belum ada agent aktif</span>}
           </div>
 
           <label className="vp-sub">PEMBAWA ACARA</label>
@@ -444,7 +469,7 @@ export default function MeetingPanel({
           >
             {picked.map((p) => (
               <option key={p} value={p}>
-                {p}
+                {displayOf(p)}
               </option>
             ))}
           </select>

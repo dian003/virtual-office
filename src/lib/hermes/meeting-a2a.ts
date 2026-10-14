@@ -89,6 +89,11 @@ export function buildOpeningPrompt(opts: {
 export function buildCrossPrompt(opts: {
   speaker: string
   next: string
+  /**
+   * URL penuh target berikutnya. Opsional: bila tidak diberi, dihitung dari
+   * peerBaseUrl() seperti perilaku lama (peserta lokal).
+   */
+  nextUrl?: string
   topic: string
   point: string
 }): string {
@@ -97,7 +102,7 @@ export function buildCrossPrompt(opts: {
   // RAPAT-A2A-2 (hop gagal `unknown agent` karena peer tak terdaftar, padahal
   // kemarin "berhasil" cuma kebetulan model jatuh ke URL). Peer tetap
   // didaftarkan juga (ensureA2aPeer) supaya nama pun resolvable — dua jalur.
-  const nextUrl = a2aEndpoint(peerBaseUrl(), opts.next)
+  const nextUrl = opts.nextUrl ?? a2aEndpoint(peerBaseUrl(), opts.next)
   return [
     `Kamu ${opts.speaker}, peserta RAPAT KANTOR. TOPIK: ${opts.topic}.`,
     'Poinmu di ronde pembuka (kirim persis ini):',
