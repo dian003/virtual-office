@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { fetchJson } from '@/lib/api'
 import FullPanel from './FullPanel'
+import CreateAgentDialog from './CreateAgentDialog'
 
 /**
  * Chat with agents — a WhatsApp-style list of conversations.
@@ -87,10 +88,8 @@ export default function ChatPanel({
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
-  /** The new-agent form. */
-  const [creating, setCreating] = useState(false)
-  const [newName, setNewName] = useState('')
-  const [createBusy, setCreateBusy] = useState(false)
+  /** Dialog "Buat Agent" — menggantikan form nama-saja. */
+  const [createOpen, setCreateOpen] = useState(false)
 
   const scroller = useRef<HTMLDivElement | null>(null)
 
@@ -207,33 +206,6 @@ export default function ChatPanel({
   }
 
   /** Create an agent (a profile) and open its chat straight away. */
-  async function createAgent() {
-    const name = newName.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '')
-    if (!name) {
-      setErr('nama agent hanya huruf kecil, angka, - dan _')
-      return
-    }
-    setCreateBusy(true)
-    setErr(null)
-    try {
-      const res = await fetchJson<{ name: string }>('/api/hermes/agents', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'create', name }),
-      })
-      if (!res.ok) {
-        setErr(res.error || 'gagal membuat agent')
-        return
-      }
-      setNewName('')
-      setCreating(false)
-      onAgentCreated?.()
-      await loadList()
-      setOpenAgent(name)
-    } finally {
-      setCreateBusy(false)
-    }
-  }
 
   if (!open) return null
 
@@ -272,35 +244,23 @@ export default function ChatPanel({
       }
       actions={
         !openAgent && (
-          <button className="vp-chip-btn" onClick={() => setCreating((v) => !v)}>
+          <button className="vp-chip-btn" onClick={() => setCreateOpen(true)}>
             + Agent
           </button>
         )
       }
     >
       {err && <div className="vp-err">{err}</div>}
+      <CreateAgentDialog
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onCreated={(nm, tgt) => {
+          void loadList()
+          onAgentCreated?.()
+          if (tgt === 'local') setOpenAgent(nm)
+        }}
+      />
 
-      {creating && !openAgent && (
-        <div className="vp-chat-new">
-          <input
-            className="vp-input"
-            value={newName}
-            autoFocus
-            placeholder="nama agent (mis. riset, backend)"
-            onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') void createAgent()
-            }}
-          />
-          <button className="vp-btn" disabled={createBusy || !newName.trim()} onClick={createAgent}>
-            {createBusy ? '…' : 'Buat'}
-          </button>
-          <div className="vp-note">
-            Agent = profil Hermes. Tiap agent punya memory sendiri, dan muncul di kantor
-            setelah dibuat.
-          </div>
-        </div>
-      )}
 
       {!openAgent ? (
         /* ------------------------------------------------- the chat list -- */

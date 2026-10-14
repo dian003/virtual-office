@@ -7,7 +7,7 @@ import type { AgentDivision, AgentRole } from '@/types/hermes'
 import { DIVISION_LABEL } from '@/types/hermes'
 import { ROLE_LABEL } from '@/lib/hermes/soul'
 import FullPanel from './FullPanel'
-import RestartNotice from './RestartNotice'
+import CreateAgentDialog from './CreateAgentDialog'
 
 /**
  * Spawn / hide / kill control.
@@ -52,7 +52,6 @@ type Row = {
 /** Batas izin per role dari route agents GET (tabel tunggal di control.ts). */
 type Permissions = Record<string, { allow: string[]; deny: string[]; anyTask: boolean }>
 
-const ROLE_OPTIONS = Object.entries(ROLE_LABEL) as [AgentRole, string][]
 const DIVISION_OPTIONS = Object.entries(DIVISION_LABEL) as [AgentDivision, string][]
 
 export default function AgentSpawnPanel({
@@ -69,37 +68,27 @@ export default function AgentSpawnPanel({
   const [busy, setBusy] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const [newName, setNewName] = useState('')
-  const [newDesc, setNewDesc] = useState('')
-  const [newRole, setNewRole] = useState<AgentRole>('backend')
-  const [newDivision, setNewDivision] = useState<AgentDivision>('tech')
-  const [newSoul, setNewSoul] = useState('')
+  /** Dialog "Buat Agent" — satu-satunya jalur pembuatan di panel ini. */
+  const [createOpen, setCreateOpen] = useState(false)
   /**
    * Keahlian/domain: freetext koma ("meta-ads, reporting"). Disimpan di
    * marker SOUL.md (pemetaan office), TIDAK diumumkan ke A2A — skills di
    * agent card hanya bisa berisi toolset Hermes yang nyata.
    */
-  const [newDomains, setNewDomains] = useState('')
   /**
    * Toolset yang diumumkan di agent card. Kosong = semua toolset.
    * Hanya nama toolset nyata (dari /api/hermes/toolsets), bukan tag bebas.
    */
-  const [newToolsets, setNewToolsets] = useState<string[]>([])
-  const [toolsetCatalog, setToolsetCatalog] = useState<{ name: string; enabled: boolean }[]>([])
   /**
    * Toggle A2A: default NYALA (permintaan operator: spawn dari mana pun harus
    * langsung A2A). Hidup = daftarkan served-agent (local:false). Berlaku
    * setelah gateway di-restart — form tidak janji "langsung aktif".
    */
-  const [newServeA2a, setNewServeA2a] = useState(true)
   /** Domain yang tidak punya pemilik: dinyatakan apa adanya, bukan diarang. */
   const [domainOwners, setDomainOwners] = useState<Record<string, string | null>>({})
   /** Model untuk profil yang SEDANG dibuat; '' = bawaan Hermes. Terpisah dari `pick`
    *  (ganti model profil yang sudah ada) supaya dua alur itu tidak saling menimpa. */
-  const [newModel, setNewModel] = useState('')
-  const [soulPreview, setSoulPreview] = useState<string | null>(null)
   const [divFilter, setDivFilter] = useState<'all' | AgentDivision>('all')
-  const [creating, setCreating] = useState(false)
   const [note, setNote] = useState<string | null>(null)
   /** id awaiting the second click before a destructive delete. */
   const [confirmKill, setConfirmKill] = useState<string | null>(null)
@@ -112,7 +101,6 @@ export default function AgentSpawnPanel({
    */
   const [needsGatewayRestart, setNeedsGatewayRestart] = useState<boolean | null>(null)
   /** Pop up "silahkan restart server" — tampil setelah pendaftaran A2A sukses. */
-  const [restartFor, setRestartFor] = useState<string | null>(null)
 
   // A click anywhere else cancels a pending delete.
   useEffect(() => {
@@ -158,16 +146,6 @@ export default function AgentSpawnPanel({
       }
     }
   }, [open, models.length])
-  useEffect(() => {
-    if (!open || toolsetCatalog.length) return
-    let alive = true
-    fetchJson<{ toolsets?: { name: string; enabled: boolean }[] }>('/api/hermes/toolsets', { cache: 'no-store' }).then((res) => {
-      if (alive && res.ok) setToolsetCatalog(res.data?.toolsets || [])
-    })
-    return () => {
-      alive = false
-    }
-  }, [open, toolsetCatalog.length])
 
   async function setModel(name: string, model: string) {
     setBusy(name)
@@ -245,95 +223,6 @@ export default function AgentSpawnPanel({
     }
   }
 
-  async function create() {
-    const name = newName.trim()
-    if (!name) return
-    setCreating(true)
-    setErr(null)
-    setNote(null)
-    setSoulPreview(null)
-    try {
-      const hit = models.find((m) => m.model === newModel)
-      const res = await fetchJson<{
-        name: string
-        soulPreview?: string
-        model?: string | null
-        modelError?: string | null
-        domains?: string[]
-        a2aRegistered?: boolean | null
-        a2aError?: string | null
-        toolsetAdded?: boolean | null
-        toolsetError?: string | null
-        peerAdded?: boolean | null
-        peerError?: string | null
-        a2aNote?: string | null
-        needsGatewayRestart?: boolean | null
-      }>('/api/hermes/agents', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'create',
-          name,
-          description: newDesc.trim(),
-          role: newRole,
-          division: newDivision,
-          soul: newSoul.trim(),
-          domains: newDomains.trim(),
-          advertisedToolsets: newToolsets,
-          serveA2a: newServeA2a,
-          model: newModel || undefined,
-          provider: newModel ? hit?.provider : undefined,
-        }),
-      })
-      if (!res.ok || !res.data) throw new Error(res.error || 'gagal membuat profil')
-      setNewName('')
-      setNewDesc('')
-      setNewSoul('')
-      setNewDomains('')
-      setNewToolsets([])
-      setNewServeA2a(true)
-      setNewModel('')
-      setSoulPreview(res.data.soulPreview ?? null)
-      // Laporkan model dari BALASAN server, bukan dari pilihan di form: kalau set-model
-      // gagal, operator harus tahu agent ini jalan dengan bawaan Hermes.
-      const modelNote = res.data.model
-        ? `model ${res.data.model}`
-        : res.data.modelError
-          ? `model GAGAL diset (${res.data.modelError}) — sementara pakai bawaan Hermes`
-          : 'model bawaan Hermes'
-      const domNote = res.data.domains?.length ? `keahlian: ${res.data.domains.join(', ')} (pemetaan office, bukan A2A). ` : ''
-      const a2aNote = res.data.a2aRegistered === true
-        ? `${res.data.a2aNote ?? 'Tersimpan. Berlaku setelah gateway di-restart.'} `
-        : res.data.a2aRegistered === false
-          ? `GAGAL didaftarkan A2A (${res.data.a2aError}) — profilnya ada tapi belum terdaftar. `
-          : 'A2A tidak didaftarkan (toggle mati) — profilnya ada tapi belum terdaftar. Nyalakan manual bila perlu. '
-      // A2A-CALL-1: kemampuan MEMANGGIL ikut dilaporkan (pratinjau + laporan,
-      // idempoten — dua kali jalan tak menggandakan).
-      const callNote = res.data.a2aRegistered === true
-        ? (res.data.toolsetAdded === true
-          ? 'toolset a2a ditambahkan (bisa memanggil). '
-          : res.data.toolsetAdded === false && res.data.toolsetError
-            ? `toolset a2a GAGAL (${res.data.toolsetError}). `
-            : 'toolset a2a sudah ada (bisa memanggil). ') +
-          (res.data.peerAdded === true
-            ? `peer ${res.data.name}-local didaftarkan (nama bisa diresolusi). `
-            : res.data.peerAdded === false && res.data.peerError
-              ? `peer GAGAL (${res.data.peerError}). `
-              : `peer ${res.data.name}-local sudah ada. `)
-        : ''
-      setNote(`profil "${res.data.name}" dibuat, ${modelNote} — agent berjalan masuk lewat pintu utama. ${domNote}${a2aNote}${callNote}`)
-      setNeedsGatewayRestart(res.data.needsGatewayRestart ?? null)
-      // Pendaftaran A2A sukses → pop up "silahkan restart server". Gagal =
-      // JANGAN tampilkan pop up sukses (catatan di atas sudah bilang gagal).
-      if (res.data.a2aRegistered === true) setRestartFor(res.data.name)
-      await load()
-      onChanged()
-    } catch (e) {
-      setErr((e as Error).message)
-    } finally {
-      setCreating(false)
-    }
-  }
 
   if (!open) return null
 
@@ -470,7 +359,6 @@ export default function AgentSpawnPanel({
 
   return (
     <FullPanel onClose={onClose} label="Agent" title="Agent" bodyClassName="vp-pad flex flex-col gap-3">
-      {restartFor && <RestartNotice agentName={restartFor} onClose={() => setRestartFor(null)} />}
       <div className="vp-kv">
         <span>di kantor</span>
         <b>{inOffice.length}</b>
@@ -488,140 +376,24 @@ export default function AgentSpawnPanel({
 
       {err && <div className="vp-err">{err}</div>}
       {note && <div className="vp-ok">{note}</div>}
-      {soulPreview && (
-        <div className="vp-ok">
-          <b>Soul tersimpan:</b>
-          <pre style={{ whiteSpace: 'pre-wrap', margin: '4px 0 0', fontSize: 11 }}>{soulPreview}</pre>
-        </div>
-      )}
       {loading && <div className="vp-muted">memuat…</div>}
 
-      <div className="vp-sub">BUAT PROFIL BARU</div>
-      <input
-        className="vp-input"
-        value={newName}
-        onChange={(e) => setNewName(e.target.value)}
-        placeholder="budi"
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') void create()
+      <div className="vp-sub">BUAT AGENT</div>
+      <div className="vp-note">
+        Satu dialog untuk semua target: Hermes lokal dibuat langsung; head remote / server baru
+        menghasilkan prompt provisioning siap tempel.
+      </div>
+      <button className="vp-btn" onClick={() => setCreateOpen(true)}>
+        + Buat agent
+      </button>
+      <CreateAgentDialog
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onCreated={() => {
+          void load()
+          onChanged()
         }}
       />
-      {/*
-        Deskripsi = `description` di agent card A2A: teks yang dibaca agent
-        pemanggil untuk memutuskan "ini orangnya". Tulis BUAT DIBACA AGENT
-        LAIN (kosakata domain yang akan dicari), bukan sekadar label manusia.
-      */}
-      <textarea
-        className="vp-input"
-        value={newDesc}
-        onChange={(e) => setNewDesc(e.target.value)}
-        placeholder="Deskripsi agent card — DIBACA AGENT LAIN saat discovery. Tulis kosakata domain yang akan dicari, cth: Menangani iklan Meta & Google: budget, CPA, laporan performa mingguan. Hubungi kalau butuh angka spend atau hasil kampanye."
-        rows={2}
-      />
-      {/*
-        Keahlian/domain: daftar koma ("meta-ads, reporting"). Dipakai OFFICE
-        untuk pemetaan domain→pemilik — TIDAK diumumkan ke A2A (skills di card
-        hanya bisa berisi toolset Hermes yang nyata, lihat pilihan di bawah).
-      */}
-      <input
-        className="vp-input"
-        value={newDomains}
-        onChange={(e) => setNewDomains(e.target.value)}
-        placeholder="Keahlian/domain, pisah koma — cth: meta-ads, reporting, budget (pemetaan office, bukan A2A)"
-      />
-      <div className="flex gap-2">
-        <select
-          className="vp-input"
-          value={newRole}
-          onChange={(e) => setNewRole(e.target.value as AgentRole)}
-          title="Role agent"
-        >
-          {ROLE_OPTIONS.map(([v, label]) => (
-            <option key={v} value={v}>
-              {label}
-            </option>
-          ))}
-        </select>
-        <select
-          className="vp-input"
-          value={newDivision}
-          onChange={(e) => setNewDivision(e.target.value as AgentDivision)}
-          title="Divisi agent"
-        >
-          {DIVISION_OPTIONS.map(([v, label]) => (
-            <option key={v} value={v}>
-              {label}
-            </option>
-          ))}
-        </select>
-      </div>
-      <textarea
-        className="vp-input"
-        value={newSoul}
-        onChange={(e) => setNewSoul(e.target.value)}
-        placeholder="cth: Budi adalah CEO visioner — ambil keputusan akhir, bagi tugas ke tiap divisi, jaga visi perusahaan. Gaya: tegas, ringkas, eksekusi langsung. (opsional)"
-        rows={3}
-      />
-      <ModelPicker
-        value={newModel}
-        onChange={setNewModel}
-        models={models}
-        disabled={creating}
-        emptyLabel="bawaan Hermes"
-        title="Model untuk agent baru ini (kosong = bawaan Hermes)"
-      />
-      {/*
-        Toolset yang DIUMUMKAN di agent card (`advertised_toolsets`). Hanya
-        nama toolset nyata Hermes — skills di card diturunkan dari registry,
-        bukan tag bebas. Kosong = umumkan semua toolset.
-      */}
-      <div className="vp-sub" title="Toolset nyata yang diumumkan di agent card A2A. Kosong = semua.">
-        UMUMKAN DI AGENT CARD (KOSONG = SEMUA)
-      </div>
-      <div className="flex flex-wrap gap-1" style={{ maxHeight: 120, overflowY: 'auto' }}>
-        {toolsetCatalog.map((t) => {
-          const on = newToolsets.includes(t.name)
-          return (
-            <button
-              key={t.name}
-              type="button"
-              className={`vp-chip-btn${on ? ' on' : ''}`}
-              disabled={creating}
-              onClick={() =>
-                setNewToolsets((prev) => (prev.includes(t.name) ? prev.filter((x) => x !== t.name) : [...prev, t.name]))
-              }
-              title={`${t.name}${t.enabled ? '' : ' (nonaktif di install ini)'}`}
-              style={{ opacity: t.enabled ? 1 : 0.55 }}
-            >
-              {on ? '✓ ' : ''}{t.name}
-            </button>
-          )
-        })}
-        {!toolsetCatalog.length && <span className="vp-muted">memuat daftar toolset…</span>}
-      </div>
-      {/*
-        Toggle A2A: default NYALA (permintaan operator). Hidup = tulis entri
-        served-agent (local:false, dijawab profil ini sendiri). BERLAKU SETELAH
-        GATEWAY DI-RESTART — form tidak menampilkan "aktif" sebelum itu.
-      */}
-      <label className="flex items-center gap-2" style={{ fontSize: 12 }}>
-        <input
-          type="checkbox"
-          checked={newServeA2a}
-          disabled={creating}
-          onChange={(e) => setNewServeA2a(e.target.checked)}
-        />
-        <span title="Daftarkan profil ini di platforms.a2a.agents (local:false). Berlaku setelah gateway di-restart.">
-          Bisa dihubungi agent lain (A2A) — otomatis terdaftar A2A; berlaku setelah gateway di-restart
-        </span>
-      </label>
-      <button
-        className="vp-btn"
-        disabled={creating || !newName.trim()}
-        onClick={create}
-      >
-        {creating ? 'Membuat…' : '+ Buat profil'}
-      </button>
 
       <button className="vp-btn vp-btn-rosy" disabled={!!busy} onClick={load}>
         Segarkan
