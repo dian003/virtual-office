@@ -86,6 +86,17 @@ export function listRemoteHeads(): RemoteHead[] {
       baseUrl: process.env.CUE4_A2A_URL || 'http://100.113.25.17:8340',
       agents: ['cue', 'cue-fast'],
     },
+    {
+      // infrastruktur-it-2 = "muse-ade", Muse VM outbound-only —
+      // agent pertama yang mendaftar self-service lewat fleet.sh di STB.
+      // Server A2A antrean di VM-nya (127.0.0.1:8789) diteruskan via
+      // reverse tunnel STB (100.105.150.118:18790 -> VM:8789). Port SSH
+      // VM-nya juga diteruskan (STB 10023 -> VM:22) untuk operator.
+      id: 'infrastruktur-it-2',
+      name: 'Infrastruktur IT 2 (muse-ade)',
+      baseUrl: process.env.INFRA2_A2A_URL || 'http://100.105.150.118:18790',
+      agents: ['infrastruktur-it-2'],
+    },
   ]
 }
 
