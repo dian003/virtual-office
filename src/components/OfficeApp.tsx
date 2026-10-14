@@ -10,6 +10,7 @@ import MeetingPanel from './MeetingPanel'
 import AgentSpawnPanel from './AgentSpawnPanel'
 import CronPanel from './CronPanel'
 import SystemPanel from './SystemPanel'
+import RemoteHeadsPanel from './RemoteHeadsPanel'
 import BoardPanel from './BoardPanel'
 import ChatPanel from './ChatPanel'
 import NewTaskDialog from './NewTaskDialog'
@@ -50,6 +51,7 @@ export default function OfficeApp() {
   const [agentOpen, setAgentOpen] = useState(false)
   const [cronOpen, setCronOpen] = useState(false)
   const [systemOpen, setSystemOpen] = useState(false)
+  const [remoteHeadsOpen, setRemoteHeadsOpen] = useState(false)
   const [panelOpen, setPanelOpen] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
   const [boardOpen, setBoardOpen] = useState(false)
@@ -152,6 +154,9 @@ export default function OfficeApp() {
           <button className="vp-btn vp-btn-ghost" onClick={() => setCronOpen(true)}>
             Cron
           </button>
+          <button className="vp-btn vp-btn-ghost" onClick={() => setRemoteHeadsOpen(true)}>
+            Remote Heads
+          </button>
           <button className="vp-btn vp-btn-ghost" onClick={() => setPanelOpen(true)}>
             Papan
           </button>
@@ -201,6 +206,7 @@ export default function OfficeApp() {
       <CronPanel open={cronOpen} onClose={() => setCronOpen(false)} />
       <BoardPanel open={panelOpen} onClose={() => setPanelOpen(false)} />
       <SystemPanel open={systemOpen} onClose={() => setSystemOpen(false)} />
+      <RemoteHeadsPanel open={remoteHeadsOpen} onClose={() => setRemoteHeadsOpen(false)} />
       <ChatPanel
         open={chatOpen}
         onClose={() => setChatOpen(false)}
