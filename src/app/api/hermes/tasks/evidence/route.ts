@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { EVIDENCE_BATCH_CAP } from '@/lib/hermes/evidence'
-import { evidenceMarks } from '@/lib/hermes/kanban'
+import { evidenceMarks, type EvidenceMarkRow } from '@/lib/hermes/kanban'
+import { isRemoteTaskId, remoteEvidenceRows } from '@/lib/hermes/remote-tasks'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,7 +22,17 @@ export async function POST(req: NextRequest) {
     )
   }
   try {
-    const marks = await evidenceMarks(ids.filter((x): x is string => typeof x === 'string'))
+    const allIds = ids.filter((x): x is string => typeof x === 'string')
+    // Id remote tidak dikenal gateway: buktinya = teks balasan agent di store office.
+    const remoteRows = await remoteEvidenceRows(allIds.filter(isRemoteTaskId))
+    const localRows: EvidenceMarkRow[] = allIds.some((x) => !isRemoteTaskId(x))
+      ? await evidenceMarks(allIds.filter((x) => !isRemoteTaskId(x)))
+      : []
+    const byId = new Map<string, EvidenceMarkRow>()
+    for (const r of [...remoteRows, ...localRows]) byId.set(r.id, r as EvidenceMarkRow)
+    const marks: EvidenceMarkRow[] = allIds.map(
+      (x) => byId.get(x) ?? ({ id: x, mark: 'unchecked' } as EvidenceMarkRow),
+    )
     return NextResponse.json({
       mode: 'ringkas',
       note: 'ringkas: hanya show+runs per id, tanpa log dan lampiran; panel detail membaca semuanya',

@@ -12,6 +12,7 @@ import { dummyRoster } from '@/lib/office/dummy-roster'
 import { assertLocalWriteRequest } from '@/lib/local-guard'
 import type { Agent, AgentDivision } from '@/types/hermes'
 import { getRemoteHeadStatuses } from '@/lib/hermes/remote-health'
+import { listRemoteTasks } from '@/lib/hermes/remote-tasks'
 import { remoteKey } from '@/lib/hermes/remote-agents'
 
 export const dynamic = 'force-dynamic'
@@ -32,7 +33,13 @@ export async function GET() {
     // Agent remote yang head-nya LIVE ikut menjadi roster ruangan: scene
     // mensintesis avatar untuk roster yang belum punya baris DB (masuk lewat
     // pintu utama). Head yang DOWN tidak dimasukkan — avatarnya keluar sendiri.
-    // Roster ini TIDAK dipakai untuk penugasan task (tetap profil Hermes).
+    // Sejak tugas remote didukung, roster ini JUGA dipakai untuk penugasan
+    // (dieksekusi worker A2A office); status ikut sibuk saat ada tugas berjalan.
+    const remoteBusy = new Set(
+      (await listRemoteTasks())
+        .filter((r) => r.status === 'queued' || r.status === 'running')
+        .map((r) => r.assignee),
+    )
     const remoteAgents: Agent[] = (await getRemoteHeadStatuses())
       .filter((h) => h.live)
       .flatMap((h) =>
@@ -43,7 +50,7 @@ export async function GET() {
           division: 'tech',
           soulExists: false,
           deskIndex: null,
-          status: 'idle',
+          status: remoteBusy.has(remoteKey(h.id, slug)) ? 'working' : 'idle',
           currentTaskId: null,
         })),
       )

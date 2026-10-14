@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { VERIFICATION_BATCH_CAP } from '@/lib/hermes/verification'
-import { verificationMarks } from '@/lib/hermes/kanban'
+import { verificationMarks, type VerificationMarkRow } from '@/lib/hermes/kanban'
+import { isRemoteTaskId, remoteVerificationRows } from '@/lib/hermes/remote-tasks'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,7 +22,17 @@ export async function POST(req: NextRequest) {
     )
   }
   try {
-    const marks = await verificationMarks(ids.filter((x): x is string => typeof x === 'string'))
+    const allIds = ids.filter((x): x is string => typeof x === 'string')
+    // Tugas remote: klaim agent tidak diverifikasi independen (jujur: 'unchecked').
+    const remoteRows = await remoteVerificationRows(allIds.filter(isRemoteTaskId))
+    const localRows: VerificationMarkRow[] = allIds.some((x) => !isRemoteTaskId(x))
+      ? await verificationMarks(allIds.filter((x) => !isRemoteTaskId(x)))
+      : []
+    const remoteById = new Map(remoteRows.map((r) => [r.id, r]))
+    const localById = new Map(localRows.map((r) => [r.id, r]))
+    const marks = allIds.map(
+      (x) => remoteById.get(x) ?? localById.get(x) ?? { id: x, mark: 'unchecked' as const },
+    )
     return NextResponse.json({
       mode: 'ringkas',
       note: 'ringkas: hanya show (status+events) per id; panel detail membaca task yang sama',

@@ -11,6 +11,7 @@ import {
   taskLog,
   unblockTask,
 } from '@/lib/hermes/kanban'
+import { getRemoteTask, isRemoteTaskId, toBoardTask } from '@/lib/hermes/remote-tasks'
 import { assertLocalWriteRequest } from '@/lib/local-guard'
 
 export const dynamic = 'force-dynamic'
@@ -25,6 +26,12 @@ export const dynamic = 'force-dynamic'
  */
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params
+  // Tugas remote: layani dari store office, jangan ke gateway Hermes.
+  if (isRemoteTaskId(id)) {
+    const rec = await getRemoteTask(id)
+    if (!rec) return notFound(id)
+    return NextResponse.json({ taskId: id, task: toBoardTask(rec), runs: [], log: '' })
+  }
   try {
     const task = await getTask(id)
     if (!task) return notFound(id)
@@ -54,6 +61,19 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   const { id } = await ctx.params
   const body = await req.json().catch(() => ({}))
   const action = String(body?.action || '')
+  // Tugas remote dijalankan otomatis oleh worker — tidak ada aksi manual.
+  if (isRemoteTaskId(id)) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'invalid_request',
+          message: 'tugas remote dijalankan otomatis oleh worker A2A — tidak ada aksi manual',
+          status: 400,
+        },
+      },
+      { status: 400 },
+    )
+  }
   try {
     // Same guard as GET: acting on a task that does not exist must say so rather
     // than report a downstream CLI error as a server fault.

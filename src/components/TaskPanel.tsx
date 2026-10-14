@@ -322,13 +322,16 @@ export default function TaskPanel() {
             <div className="flex gap-2">
               <button
                 className="vp-btn"
-                disabled={busy || task.status === 'running' || task.status === 'review'}
+                disabled={busy || task.status === 'running' || task.status === 'review' || task.id.startsWith('rt-')}
                 onClick={() => act('run')}
                 title="Buka blokir bila perlu, lalu suruh dispatcher Hermes mengeksekusi tugas ini"
               >
                 {busy ? '…' : 'Jalankan'}
               </button>
             </div>
+            {task.id.startsWith('rt-') && (
+              <div className="vp-muted">Tugas remote dijalankan otomatis oleh worker A2A — tidak perlu dijalankan manual.</div>
+            )}
             {blocked && (
               <div className="vp-muted">
                 Status <b>{task.status}</b>: tombol Jalankan otomatis membuka blokir dulu.
@@ -360,6 +363,9 @@ export default function TaskPanel() {
             {note && <div className="vp-note">{note}</div>}
 
             {task.body && <Collapsible label="Uraian" text={task.body} />}
+            {((task as { result?: string }).result) && (
+              <Collapsible label="Hasil (agent remote)" text={String((task as { result?: string }).result)} />
+            )}
 
             {/* Klaim worker ≠ terverifikasi. "Selesai" hanya berarti worker MENYATAKAN
                 selesai; terverifikasi berarti ada jejak review_requested → completed dari

@@ -92,6 +92,8 @@ export interface Job {
   id: string
   spec: RemoteCallSpec
   status: JobStatus
+  /** Dipanggil setelah job selesai (done/failed). Tidak wajib diisi. */
+  onSettled?: (job: Job) => void
   result?: RemoteCallResult
   enqueuedAt: string
   startedAt?: string
@@ -123,6 +125,7 @@ async function pump(): Promise<void> {
         job.result = result
         job.status = result.ok ? 'done' : 'failed'
         job.finishedAt = new Date().toISOString()
+        job.onSettled?.(job)
       })
       // beri kesempatan worker lain mulai tanpa menunggu selesai
       await new Promise((r) => setImmediate(r))
@@ -132,12 +135,13 @@ async function pump(): Promise<void> {
   }
 }
 
-export function enqueue(spec: RemoteCallSpec): Job {
+export function enqueue(spec: RemoteCallSpec, onSettled?: (job: Job) => void): Job {
   const job: Job = {
     id: newJobId(),
     spec,
     status: 'queued',
     enqueuedAt: new Date().toISOString(),
+    onSettled,
   }
   jobs.set(job.id, job)
   queue.push(job.id)

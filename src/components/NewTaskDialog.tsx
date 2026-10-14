@@ -4,11 +4,12 @@ import { useState } from 'react'
 import { useOffice } from '@/lib/store'
 import { fetchJson } from '@/lib/api'
 
-/** Dispatch a new task straight into the Hermes board. */
+/** Dispatch a new task: profil Hermes -> board Hermes; agent remote -> worker A2A office. */
 export default function NewTaskDialog() {
   const open = useOffice((s) => s.newTaskOpen)
   const setOpen = useOffice((s) => s.setNewTaskOpen)
   const agents = useOffice((s) => s.agents)
+  const remoteAgents = useOffice((s) => s.remoteAgents)
   const load = useOffice((s) => s.load)
 
   const [title, setTitle] = useState('')
@@ -71,6 +72,9 @@ export default function NewTaskDialog() {
           >
             {agents.map((a) => (
               <option key={a.name} value={a.name}>{a.displayName}</option>
+            ))}
+            {remoteAgents.map((a) => (
+              <option key={a.name} value={a.name}>{a.displayName} · remote</option>
             ))}
           </select>
 

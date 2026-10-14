@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createTask, listAgents, listAssignees, listTasks } from '@/lib/hermes/kanban'
+import { isRemoteAgentKey } from '@/lib/hermes/remote-agents'
+import {
+  createRemoteTask,
+  listRemoteTasks,
+  toBoardTask,
+  validateRemoteAssignee,
+} from '@/lib/hermes/remote-tasks'
 import { visible } from '@/lib/hermes/office-membership'
 import { blockedAssigneesFor } from '@/lib/hermes/approvals'
 import type { TaskOrigin } from '@/types/hermes'
@@ -14,16 +21,20 @@ export async function GET() {
     // 2D view has an ARSIP column that stayed permanently empty without it.
     // The two CLI reads are independent, so they run together — sequentially
     // they cost ~2.8 s per poll on a small machine.
-    const [tasks, assignees] = await Promise.all([
+    const [tasks, assignees, remoteTasks] = await Promise.all([
       listTasks({ includeArchived: true }),
       listAssignees(),
+      listRemoteTasks(),
     ])
+    // Tugas remote dikelola office (bukan kanban Hermes): tempelkan proyeksinya
+    // agar Papan menampilkannya seperti tugas lain.
+    const allTasks = [...tasks, ...remoteTasks.map(toBoardTask)]
     // Apply the hide list: a hidden profile is absent from the office but its
     // tasks stay on the board, so the work is never hidden, only the avatar.
     // Ini yang memberi makan avatar: agent yang task aktifnya menunggu manusia harus tampil
     // 'blocked' DI SINI, bukan hanya di menu spawn.
-    const agents = visible(await listAgents(tasks, assignees, await blockedAssigneesFor(tasks)))
-    return NextResponse.json({ tasks, agents })
+    const agents = visible(await listAgents(allTasks, assignees, await blockedAssigneesFor(allTasks)))
+    return NextResponse.json({ tasks: allTasks, agents })
   } catch (err) {
     return NextResponse.json(
       { error: { code: 'hermes_unavailable', message: (err as Error).message, status: 503 } },
@@ -75,6 +86,29 @@ export async function POST(req: NextRequest) {
   if (!assignee) return bad('assignee wajib')
 
   const b = body as Record<string, unknown>
+
+  // Assignee remote: TIDAK BOLEH masuk ke kanban Hermes (gateway tidak mengenal
+  // kunci `remote:`) — dibuat sebagai tugas remote office, dieksekusi worker A2A.
+  if (isRemoteAgentKey(assignee)) {
+    const v = await validateRemoteAssignee(assignee)
+    if (!v.ok) return bad(v.message)
+    try {
+      const rec = await createRemoteTask({
+        title: title.slice(0, 300),
+        body: typeof b.body === 'string' ? b.body : undefined,
+        priority: Number.isFinite(Number(b.priority)) ? Number(b.priority) : 0,
+        assignee,
+        origin,
+      })
+      return NextResponse.json({ success: true, task: toBoardTask(rec) }, { status: 201 })
+    } catch (err) {
+      return NextResponse.json(
+        { error: { code: 'dispatch_failed', message: (err as Error).message, status: 502 } },
+        { status: 502 },
+      )
+    }
+  }
+
   try {
     const task = await createTask({
       title: title.slice(0, 300),
@@ -129,6 +163,10 @@ async function createMany(raw: unknown[], origin: TaskOrigin) {
     if (!title) continue
     if (!assignee) {
       failed.push({ title, error: 'penanggung belum dipilih' })
+      continue
+    }
+    if (isRemoteAgentKey(assignee)) {
+      failed.push({ title, error: 'assignee remote belum didukung untuk pembuatan massal' })
       continue
     }
     try {
