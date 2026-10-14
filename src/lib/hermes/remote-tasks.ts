@@ -280,3 +280,48 @@ export async function remoteVerificationRows(
     return { id, mark: 'unchecked' as const }
   })
 }
+
+/**
+ * Payload GET /api/hermes/tasks/{id}/verification untuk tugas remote.
+ * TIDAK PERNAH memanggil kanban Hermes. done -> 'claim' (klaim agent, tanpa
+ * review independen); lainnya -> 'open' (belum dinilai).
+ */
+export function remoteTaskVerification(rec: RemoteTaskRecord) {
+  const done = rec.status === 'done'
+  return {
+    taskId: rec.id,
+    status: toBoardTask(rec).status,
+    verdict: (done ? 'claim' : 'open') as 'claim' | 'open',
+    why: done
+      ? 'Klaim agent remote - balasan diterima dari head via worker A2A; tidak ada review independen di office.'
+      : `Tugas remote berstatus "${rec.status}" - belum selesai, belum dinilai.`,
+    ageSeconds: 0,
+    readAt: new Date().toISOString(),
+  }
+}
+
+/**
+ * Payload GET /api/hermes/tasks/{id}/evidence untuk tugas remote.
+ * Bukti = teks balasan agent itu sendiri. done + ada balasan -> 'proven';
+ * failed -> 'unproven' (pesan error dibawa sebagai item); berjalan -> 'open'.
+ */
+export function remoteTaskEvidence(rec: RemoteTaskRecord) {
+  const board = toBoardTask(rec)
+  const body = (rec.result || '').trim()
+  const verdict: 'proven' | 'unproven' | 'open' =
+    rec.status === 'done' ? (body ? 'proven' : 'unproven') : rec.status === 'failed' ? 'unproven' : 'open'
+  const finishedMs = rec.finishedAt ? Date.parse(rec.finishedAt) : NaN
+  return {
+    taskId: rec.id,
+    status: board.status,
+    verdict,
+    items: body
+      ? [{ kind: 'summary' as const, label: rec.status === 'failed' ? 'pesan error dari agent' : 'balasan agent remote', body }]
+      : [],
+    completedAt: rec.finishedAt,
+    completedAgeSeconds: Number.isFinite(finishedMs) ? Math.max(0, Math.round((Date.now() - finishedMs) / 1000)) : null,
+    attachments: [],
+    ageSeconds: 0,
+    readAt: new Date().toISOString(),
+  }
+}

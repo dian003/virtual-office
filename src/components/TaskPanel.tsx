@@ -338,6 +338,10 @@ export default function TaskPanel() {
               </div>
             )}
 
+            {task.id.startsWith('rt-') ? (
+              <div className="vp-muted">Model ditentukan oleh profil/agent di servernya — tugas remote tidak memakai pin model office.</div>
+            ) : (
+              <>
             <div className="vp-sub">MODEL AGENT UNTUK TUGAS INI</div>
             <ModelPicker
               value={pick}
@@ -360,6 +364,8 @@ export default function TaskPanel() {
                 Simpan model
               </button>
             </div>
+              </>
+            )}
             {note && <div className="vp-note">{note}</div>}
 
             {task.body && <Collapsible label="Uraian" text={task.body} />}

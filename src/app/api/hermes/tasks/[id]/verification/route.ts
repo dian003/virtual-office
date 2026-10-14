@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getTaskVerification } from '@/lib/hermes/kanban'
+import { getRemoteTask, isRemoteTaskId, remoteTaskVerification } from '@/lib/hermes/remote-tasks'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,6 +13,17 @@ export const dynamic = 'force-dynamic'
  */
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params
+  // Tugas remote: layani dari store office â JANGAN ke kanban Hermes.
+  if (isRemoteTaskId(id)) {
+    const rec = await getRemoteTask(id)
+    if (!rec) {
+      return NextResponse.json(
+        { error: { code: 'not_found', message: `tugas remote "${id}" tidak ada`, status: 404 } },
+        { status: 404 },
+      )
+    }
+    return NextResponse.json(remoteTaskVerification(rec))
+  }
   try {
     return NextResponse.json(await getTaskVerification(id))
   } catch (err) {
