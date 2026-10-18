@@ -31,10 +31,12 @@ export function listRemoteHeads(): RemoteHead[] {
   }
   return [
     {
+      // Agent WAJIB sama dgn served_agents gateway STB (GET / di :9900).
+      // tester = gateway Telegram sendiri (bukan A2A); profil skyla sudah tidak ada di STB (fix 2026-10-19).
       id: 'stb',
       name: 'STB (infrasec)',
       baseUrl: process.env.STB_A2A_URL || 'http://127.0.0.1:9901',
-      agents: ['tester', 'skyla', 'heker3', 'heker4'],
+      agents: ['default', 'testing', 'heker2', 'heker3', 'heker4'],
     },
     {
       // zahra-muse = VM asisten (Muse Spark). Bukan Hermes: server A2A
