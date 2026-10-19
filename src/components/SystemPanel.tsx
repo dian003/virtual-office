@@ -124,6 +124,11 @@ export default function SystemPanel({ open, onClose }: { open: boolean; onClose:
    * dipakai doctor). Panel ini TIDAK menghitung ulang. null = tak pasti.
    */
   const [needsGatewayRestart, setNeedsGatewayRestart] = useState<boolean | null>(null)
+  const [deepl, setDeepl] = useState<{
+    keys: { index: number; character_count: number; character_limit: number; ratio: number; status: string }[]
+    total: { character_count: number; character_limit: number; remaining: number; ratio: number }
+    at: string
+  } | null>(null)
   const work = useOffice((st) => st.work)
 
   const load = useCallback(async () => {
@@ -174,18 +179,31 @@ export default function SystemPanel({ open, onClose }: { open: boolean; onClose:
     }
   }, [])
 
+  const loadDeepl = useCallback(async () => {
+    try {
+      const res = await fetch('/api/hermes/deepl-usage', { cache: 'no-store' })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json?.error?.message || 'gagal membaca saldo DeepL')
+      setDeepl(json)
+    } catch {
+      setDeepl(null)
+    }
+  }, [])
+
   useEffect(() => {
     if (!open) return
     load()
     loadApprovals()
     loadRestart()
+    loadDeepl()
     const t = setInterval(() => {
       load()
       loadApprovals()
       loadRestart()
+      loadDeepl()
     }, 30_000)
     return () => clearInterval(t)
-  }, [open, load, loadApprovals, loadRestart])
+  }, [open, load, loadApprovals, loadRestart, loadDeepl])
 
   if (!open) return null
 
@@ -219,6 +237,7 @@ export default function SystemPanel({ open, onClose }: { open: boolean; onClose:
               load()
               loadApprovals()
               loadRestart()
+              loadDeepl()
             }}
             disabled={busy} className="rounded border border-slate-600 px-2 py-1 hover:bg-slate-800">
             {busy ? '...' : 'muat ulang'}
@@ -256,6 +275,56 @@ export default function SystemPanel({ open, onClose }: { open: boolean; onClose:
             )}
           </div>
         </div>
+      </section>
+
+      {/* ---------- DeepL: saldo translator (TOTAL semua key) ---------- */}
+      <section className="mb-5">
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+          DeepL — saldo translator
+          {deepl && (
+            <span className={`ml-2 ${deepl.total.ratio >= 0.95 ? 'text-red-400' : deepl.total.ratio >= 0.8 ? 'text-amber-300' : 'text-slate-500'}`}>
+              · {(deepl.total.ratio * 100).toFixed(2)}% terpakai
+            </span>
+          )}
+        </h3>
+        {!deepl ? (
+          <div className="rounded border border-slate-700 bg-slate-800/50 p-2 text-xs text-slate-400">membaca…</div>
+        ) : deepl.keys.length === 0 ? (
+          <div className="rounded border border-slate-700 bg-slate-800/50 p-2 text-xs text-slate-400">
+            Belum ada key DeepL di pool translator.
+          </div>
+        ) : (
+          <div className="space-y-2 rounded border border-slate-700 bg-slate-800/50 p-2 text-xs">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="font-semibold text-slate-200">TOTAL {deepl.keys.length} key</span>
+              <span className="font-mono">
+                {nfmt(deepl.total.character_count)} / {nfmt(deepl.total.character_limit)} karakter
+              </span>
+            </div>
+            <div className="h-2 overflow-hidden rounded bg-slate-700">
+              <div
+                className={`h-full ${deepl.total.ratio >= 0.95 ? 'bg-red-500' : deepl.total.ratio >= 0.8 ? 'bg-amber-400' : 'bg-emerald-500'}`}
+                style={{ width: `${Math.min(100, deepl.total.ratio * 100).toFixed(2)}%` }}
+              />
+            </div>
+            <div className="text-slate-400">sisa {nfmt(deepl.total.remaining)} karakter</div>
+            <div className="space-y-1 border-t border-slate-700 pt-1">
+              {deepl.keys.map((k) => (
+                <div key={k.index} className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-slate-400">key #{k.index + 1}</span>
+                  {k.status === 'ok' ? (
+                    <span className="font-mono">
+                      {nfmt(k.character_count)} / {nfmt(k.character_limit)}
+                      <span className="text-slate-500"> · {(k.ratio * 100).toFixed(2)}%</span>
+                    </span>
+                  ) : (
+                    <span className="text-red-300">{k.status}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </section>
 
       {/* ---------- kerja di kantor ---------- */}
