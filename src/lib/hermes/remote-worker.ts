@@ -11,12 +11,15 @@
  */
 import { getRemoteHead } from './remote-heads'
 import { sendA2a, type A2aTurnOk } from './meeting-a2a'
+import { translateInbound, translateOutbound, type TranslationOutcome } from './translator'
 
 export interface RemoteCallSpec {
   head: string
   agent: string
   text: string
   timeoutMs?: number
+  /** Lewati translator presiden<->head untuk panggilan ini (default: ikut env). */
+  skipTranslate?: boolean
 }
 
 export interface RemoteCallResult {
@@ -26,6 +29,7 @@ export interface RemoteCallResult {
   text?: string
   ctx?: string | null
   error?: string
+  translation?: { out: TranslationOutcome; in?: TranslationOutcome }
 }
 
 /** Batas paralel per head (cegah satu head kebanjiran). */
@@ -68,8 +72,23 @@ async function runOne(spec: RemoteCallSpec): Promise<RemoteCallResult> {
   await globalSem.acquire()
   await hs.acquire()
   try {
-    const turn: A2aTurnOk = await sendA2a(head.baseUrl, spec.agent, spec.text, spec.timeoutMs ?? 120_000)
-    return { head: head.id, agent: spec.agent, ok: true, text: turn.text, ctx: turn.ctx }
+    /* Jalur presiden<->head WAJIB lewat translator (ID->EN keluar,
+     * EN->ID masuk). Payload tidak lewat sini — yang diterjemahkan hanya
+     * teks perintah dan teks hasil. Translator gagal = teks asli diteruskan. */
+    const taskId = `rw-${head.id}-${spec.agent}-${Date.now().toString(36)}`
+    let outT: TranslationOutcome = { text: spec.text, engine: 'passthrough', billed: 0 }
+    if (!spec.skipTranslate) {
+      outT = await translateOutbound(spec.text, taskId)
+    }
+    const turn: A2aTurnOk = await sendA2a(head.baseUrl, spec.agent, outT.text, spec.timeoutMs ?? 120_000)
+    let inT: TranslationOutcome = { text: turn.text, engine: 'passthrough', billed: 0 }
+    if (!spec.skipTranslate) {
+      inT = await translateInbound(turn.text, taskId)
+    }
+    return {
+      head: head.id, agent: spec.agent, ok: true, text: inT.text, ctx: turn.ctx,
+      translation: { out: outT, in: inT },
+    }
   } catch (err) {
     return { head: head.id, agent: spec.agent, ok: false, error: (err as Error).message }
   } finally {

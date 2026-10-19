@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getRemoteHead, listRemoteHeads } from '@/lib/hermes/remote-heads'
 import { sendA2a, a2aEndpoint } from '@/lib/hermes/meeting-a2a'
+import { translateInbound, translateOutbound } from '@/lib/hermes/translator'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,6 +15,11 @@ export const dynamic = 'force-dynamic'
  *
  * Head hanya menyumbang otak (skills/personality/memory/subagent);
  * eksekusi file/tools tetap di Windows berdasarkan hasil ini.
+ *
+ * Jalur presiden<->head: teks keluar diterjemahkan ID->EN dan hasil
+ * diterjemahkan EN->ID lewat profil translator (DeepL) — lihat
+ * lib/hermes/translator.ts. Matikan per panggilan dengan
+ * "translate": false, atau global lewat env TRANSLATOR_ENABLED.
  */
 
 const DEFAULT_TIMEOUT_MS = 120_000
@@ -40,6 +46,9 @@ export async function POST(req: Request) {
     timeoutMs?: number
     /** Lampiran gambar: base64 murni atau data URI. Diteruskan sebagai A2A file parts. */
     images?: { data: string; mimeType?: string; name?: string }[]
+    /** false = lewati translator untuk panggilan ini. */
+    translate?: boolean
+    taskId?: string
   }
   try {
     body = await req.json()
@@ -83,13 +92,22 @@ export async function POST(req: Request) {
     }
   })
   try {
-    const turn = await sendA2a(head.baseUrl, agent, text, timeoutMs, fileParts)
+    const taskId = body.taskId || `rc-${head.id}-${agent}-${Date.now().toString(36)}`
+    const useTranslator = body.translate !== false
+    const outT = useTranslator
+      ? await translateOutbound(text, taskId)
+      : { text, engine: 'passthrough' as const, billed: 0 }
+    const turn = await sendA2a(head.baseUrl, agent, outT.text, timeoutMs, fileParts)
+    const inT = useTranslator
+      ? await translateInbound(turn.text, taskId)
+      : { text: turn.text, engine: 'passthrough' as const, billed: 0 }
     return NextResponse.json({
       head: head.id,
       agent,
       endpoint: a2aEndpoint(head.baseUrl, agent),
-      text: turn.text,
+      text: inT.text,
       ctx: turn.ctx,
+      translation: { taskId, out: outT, in: inT },
     })
   } catch (err) {
     return NextResponse.json(
