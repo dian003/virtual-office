@@ -394,11 +394,52 @@ export async function setTaskModel(
  * ids, read from `hermes config get custom_providers --json` (the CLI masks
  * api_key, so no credential reaches the browser).
  *
- * A provider entry's `models` map is written by the model picker when it probes
+ * A provider entry's `models` list is written by the model picker when it probes
  * /v1/models; an entry with none still appears with its default model so it can
  * be picked at all. Deduped by model id, first provider wins.
  */
 export type ModelChoice = { model: string; provider: string; label: string }
+
+/**
+ * Model ids from a provider's `models` field, whatever shape the CLI emits.
+ *
+ * config.yaml stores `models` as a plain list of id strings, but
+ * `hermes config get --json` serialises that list as an object keyed by
+ * numeric index (`{ "0": "auto", "1": "gpt-..." }`). Reading Object.keys()
+ * there yields the indices themselves ("0", "1", "100", ...) — that was the
+ * picker bug: 716 of 718 catalogue entries were bare numbers, and picking
+ * one pinned a model literally named "100", which no provider recognises.
+ *
+ * Shapes handled:
+ *  - `string[]`                         -> the strings
+ *  - `{ "0": "id", ... }` (index-keyed) -> the string values
+ *  - `{ "id": {meta}, ... }` (id map, written when /v1/models is probed)
+ *                                       -> the keys; a bare numeric key with
+ *                                          no string value is an index, never
+ *                                          a model id, and is dropped
+ *  - `[{ id|name|model: "id" }, ...]`   -> the id/name/model field
+ */
+function modelIds(models: RawProvider['models']): string[] {
+  if (!models) return []
+  const fromEntry = (v: unknown): string => {
+    if (typeof v === 'string') return v.trim()
+    if (v && typeof v === 'object') {
+      const o = v as Record<string, unknown>
+      for (const k of ['id', 'name', 'model']) {
+        if (typeof o[k] === 'string') return String(o[k]).trim()
+      }
+    }
+    return ''
+  }
+  if (Array.isArray(models)) return models.map(fromEntry).filter(Boolean)
+  return Object.entries(models)
+    .flatMap(([k, v]) => {
+      const val = fromEntry(v)
+      if (val) return [val]
+      return /^\d+$/.test(k.trim()) ? [] : [k.trim()]
+    })
+    .filter(Boolean)
+}
 
 /**
  * Pure half of the catalogue, split out so it can be tested without spawning the
@@ -407,11 +448,17 @@ export type ModelChoice = { model: string; provider: string; label: string }
 export function providersToModels(raw: RawProvider[]): ModelChoice[] {
   const out: ModelChoice[] = []
   const seen = new Set<string>()
-  for (const p of raw) {
+  // The provider list itself can arrive index-keyed the same way `models` can.
+  const providers: RawProvider[] = Array.isArray(raw)
+    ? raw
+    : Object.values((raw || {}) as Record<string, RawProvider>)
+  for (const p of providers) {
     const name = String(p?.name || '').trim()
     const base = String(p?.base_url || '').trim()
     if (!name || !base) continue
-    const ids = [...new Set([...(p?.model ? [p.model] : []), ...Object.keys(p?.models || {})])]
+    const ids = [
+      ...new Set([...(p?.model ? [String(p.model).trim()] : []), ...modelIds(p?.models)]),
+    ].filter(Boolean)
     for (const id of ids) {
       if (!id || seen.has(id)) continue
       seen.add(id)
@@ -429,7 +476,7 @@ export type RawProvider = {
   name?: string
   base_url?: string
   model?: string
-  models?: Record<string, unknown>
+  models?: Record<string, unknown> | unknown[]
 }
 
 /** `hermes config get <key> --json` — a TOP-LEVEL command, so it cannot go through
